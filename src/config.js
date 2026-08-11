@@ -4,6 +4,7 @@ const b=z.enum(["0","1"]).default("1").transform(v=>v==="1");
 const env=z.object({
  PORT:z.coerce.number().int().min(1).max(65535).default(10000),
  TERABOX_BASE_URL:z.string().url().default("https://www.terabox.com/"),
+ TERABOX_LOGIN_URL:z.string().url().default("https://www.terabox.com/wap/outlogin/emailRegister"),
  TERABOX_EMAIL:z.string().email().optional(),
  TERABOX_PASSWORD:z.string().min(1).optional(),
  TERABOX_PROFILE_DIR:z.string().default("/var/data/terabox-profile"),
