@@ -1,6 +1,6 @@
 services:
   - type: web
     name: terabox-api-render
-    runtime: docker
-    plan: free
+    env: docker
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /live
