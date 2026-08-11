@@ -4,7 +4,7 @@ import path from "node:path";
 import {config} from "./config.js";
 import {logger} from "./logger.js";
 
-const loginUrl=/\/login(?:\/|$)|loginsetting/i;
+const loginUrl=/\/login(?:\/|$)|loginsetting|outlogin/i;
 const uploadSelectors=[
  'input[type="file"]',
  'button:has-text("Upload")',
@@ -21,7 +21,10 @@ export class TeraBox{
    headless:config.HEADLESS,
    acceptDownloads:true,
    downloadsPath:config.downloadDir,
-   viewport:{width:1440,height:900},
+   viewport:{width:412,height:915},
+   userAgent:"Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
+   isMobile:true,
+   hasTouch:true,
    locale:"en-US",
    timezoneId:"Africa/Nairobi",
    args:["--disable-dev-shm-usage","--no-sandbox"]
@@ -59,10 +62,15 @@ export class TeraBox{
  async loginWithCredentials(){
   if(!config.TERABOX_EMAIL||!config.TERABOX_PASSWORD)
    throw new Error("TERABOX_EMAIL and TERABOX_PASSWORD are required for automatic Render login");
-  await this.page.goto(config.baseUrl+"login",{waitUntil:"domcontentloaded",timeout:config.REQUEST_TIMEOUT_MS});
+  await this.page.goto(config.TERABOX_LOGIN_URL,{waitUntil:"domcontentloaded",timeout:config.REQUEST_TIMEOUT_MS});
   const email=this.page.locator('input[type="email"],input[placeholder*="email" i]').first();
   const password=this.page.locator('input[type="password"],input[placeholder*="password" i]').first();
-  await email.waitFor({state:"visible",timeout:15000});
+  try{
+   await email.waitFor({state:"visible",timeout:15000});
+  }catch(e){
+   await this.captureDebug("login_form_not_found");
+   throw e;
+  }
   await email.fill(config.TERABOX_EMAIL);
   await password.fill(config.TERABOX_PASSWORD);
   const submit=this.page.locator('button:has-text("Login"),button:has-text("Log in"),button[type="submit"],text=Login').first();
@@ -70,6 +78,7 @@ export class TeraBox{
   await this.page.waitForLoadState("networkidle",{timeout:20000}).catch(()=>{});
   await this.page.waitForTimeout(2500);
   if(!(await this.loggedIn())){
+   await this.captureDebug("login_incomplete");
    throw Object.assign(new Error("TeraBox did not complete automatic login. It may require security verification/CAPTCHA or a different login method."),{code:"LOGIN_INCOMPLETE"});
   }
   await this.saveState();
