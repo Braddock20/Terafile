@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: terabox-playwright-render
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: HEADLESS
+        value: "1"
+      - key: AUTO_LOGIN
+        value: "1"
+      - key: STARTUP_SMOKE
+        value: "1"
+      - key: MAX_UPLOAD_MB
+        value: "512"
+      - key: REQUEST_TIMEOUT_MS
+        value: "45000"
+      - key: TERABOX_BASE_URL
+        value: "https://www.terabox.com/"
+      - key: API_KEY
+        sync:false
+      - key: TERABOX_EMAIL
+        sync:false
+      - key: TERABOX_PASSWORD
+        sync:false
+
