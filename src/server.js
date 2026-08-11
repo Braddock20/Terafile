@@ -10,6 +10,9 @@ import {ensureDirs} from "./fs.js";
 import {TeraBox} from "./terabox.js";
 import {startupSmoke} from "./smoke.js";
 
+const BUILD_VERSION="2026-08-11-ensureauth-v2";
+logger.info({BUILD_VERSION},"booting");
+
 const app=express();
 app.disable("x-powered-by");
 app.set("trust proxy",true);
@@ -27,9 +30,9 @@ function auth(req,res,next){
  next();
 }
 
-app.get("/",(req,res)=>res.json({service:"terabox-playwright-render",version:"1.0.0",endpoints:["/health","/smoke","/session","/upload"]}));
+app.get("/",(req,res)=>res.json({service:"terabox-playwright-render",version:BUILD_VERSION,endpoints:["/health","/smoke","/session","/upload","/debug/screenshot","/debug/html"]}));
 app.get("/health",(req,res)=>res.status(boot.ready?200:503).json({
- ok:boot.ready,service:"terabox-playwright-render",smoke:boot.smoke,error:boot.error?.message
+ ok:boot.ready,service:"terabox-playwright-render",version:BUILD_VERSION,smoke:boot.smoke,error:boot.error?.message
 }));
 app.get("/smoke",auth,(req,res)=>res.status(boot.smoke?.ok?200:503).json(boot.smoke||{ok:false,error:"Not run"}));
 app.get("/session",auth,async(req,res)=>{
