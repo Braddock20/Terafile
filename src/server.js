@@ -1,6 +1,7 @@
 import express from "express";
 import multer from "multer";
 import fs from "node:fs/promises";
+import path from "node:path";
 import crypto from "node:crypto";
 import pinoHttp from "pino-http";
 import {config} from "./config.js";
@@ -35,6 +36,18 @@ app.get("/session",auth,async(req,res)=>{
  if(!boot.ready)return res.status(503).json({ok:false,error:"Service not ready"});
  try{await storage.home();res.json({ok:true,authenticated:await storage.loggedIn(),url:storage.page.url()});}
  catch(e){res.status(502).json({ok:false,error:e.message});}
+});
+app.get("/debug/screenshot",auth,async(req,res)=>{
+ try{
+  const buf=await fs.readFile(path.join(config.tmpDir,"debug","last.png"));
+  res.type("png").send(buf);
+ }catch(e){res.status(404).json({ok:false,error:"No debug screenshot captured yet"});}
+});
+app.get("/debug/html",auth,async(req,res)=>{
+ try{
+  const html=await fs.readFile(path.join(config.tmpDir,"debug","last.html"),"utf8");
+  res.type("html").send(html);
+ }catch(e){res.status(404).json({ok:false,error:"No debug snapshot captured yet"});}
 });
 app.post("/upload",auth,upload.single("file"),async(req,res)=>{
  if(!boot.ready)return res.status(503).json({ok:false,error:"Service not ready",detail:boot.error?.message});
