@@ -89,8 +89,15 @@ export class TeraBox{
   await fs.writeFile(config.stateFile,JSON.stringify(state,null,2),{mode:0o600});
  }
  async ensureAuth(){
-  await this.home();
-  if(await this.loggedIn()){await this.saveState();return true;}
+  await this.page.goto(config.TERABOX_LOGIN_URL,{waitUntil:"domcontentloaded",timeout:config.REQUEST_TIMEOUT_MS});
+  await this.page.waitForLoadState("networkidle",{timeout:12000}).catch(()=>{});
+  const email=this.page.locator('input[type="email"],input[placeholder*="email" i]').first();
+  const onLoginForm=await email.isVisible().catch(()=>false);
+  if(!onLoginForm){
+   await this.captureDebug("assumed_authenticated");
+   await this.saveState();
+   return true;
+  }
   if(config.AUTO_LOGIN){await this.loginWithCredentials();return true;}
   throw Object.assign(new Error("Not authenticated"),{code:"AUTH_REQUIRED",status:401});
  }
@@ -119,17 +126,14 @@ export class TeraBox{
   const started=Date.now();
   const home=await this.home();
   const publicPage=!!home.title;
-  let authenticated=false;
-  let upload=null;
-  if(await this.loggedIn())authenticated=true;
-  else if(config.AUTO_LOGIN && config.TERABOX_EMAIL && config.TERABOX_PASSWORD){
-   await this.loginWithCredentials();authenticated=true;
-  }
   const smokeFile=path.join(config.tmpDir,`.terabox-smoke-${Date.now()}.txt`);
   await fs.writeFile(smokeFile,"TeraBox Playwright smoke test");
   try{
-   if(authenticated)upload=await this.upload(smokeFile,"/");
-   return {ok:publicPage&&authenticated&&!!upload,publicPage,authenticated,upload,durationMs:Date.now()-started};
+   const upload=await this.upload(smokeFile,"/");
+   return {ok:publicPage&&!!upload,publicPage,authenticated:true,upload,durationMs:Date.now()-started};
+  }catch(e){
+   const authenticated=!["AUTH_REQUIRED","LOGIN_INCOMPLETE"].includes(e.code);
+   return {ok:false,publicPage,authenticated,error:e.message,code:e.code,durationMs:Date.now()-started};
   }finally{await fs.unlink(smokeFile).catch(()=>{});}
  }
 }
