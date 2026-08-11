@@ -1,8 +1,8 @@
-Final validation:
+Final validation after Playwright version alignment:
 src/server.js: PASS
 src/terabox.js: PASS
 src/config.js: PASS
 src/smoke.js: PASS
 node --test: PASS
 
-The real TeraBox integration smoke test runs on Render at startup using the credentials you configure.
+Docker/runtime compatibility: Playwright npm 1.62.1 + official Playwright image v1.62.1-noble.
