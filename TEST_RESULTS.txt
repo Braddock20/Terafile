@@ -1,8 +1,29 @@
-Final validation after Playwright version alignment:
-src/server.js: PASS
-src/terabox.js: PASS
-src/config.js: PASS
-src/smoke.js: PASS
-node --test: PASS
+TeraBox Playwright Render V1.0.4 validation
+Date: 2026-08-11
 
-Docker/runtime compatibility: Playwright npm 1.62.1 + official Playwright image v1.62.1-noble.
+LOCAL AUTOMATED TESTS
+- npm test: PASS (6/6)
+- npm run lint: PASS
+- Node syntax checks: PASS
+- Credential hard-coding check: PASS
+- Playwright package/Docker image version consistency: PASS
+- TeraBox login endpoint configuration check: PASS
+- Startup smoke readiness logic check: PASS
+
+LIVE VALIDATION
+- Official TeraBox login page was checked against the current public web page.
+- Current email/password login is exposed by TeraBox and the configured endpoint is /login/loginsetting.
+- A real credentialed browser login/upload could NOT be executed from this build environment because outbound DNS/network access is unavailable and Docker is not installed here.
+- Therefore this archive does NOT claim a successful real-account upload. The deployed Render instance must perform the credentialed smoke test.
+
+FIXES APPLIED
+1. Updated the default TeraBox login URL from the obsolete emailRegister path to /login/loginsetting.
+2. Hardened login detection and authenticated-UI detection.
+3. Added explicit handling for security verification/CAPTCHA instead of attempting to bypass it.
+4. Fixed startup readiness: /health remains 503 when the startup smoke test fails.
+5. Added build/integration regression tests.
+6. Credentials remain environment-only and are not included in the archive.
+
+RENDER REQUIREMENTS
+Set TERABOX_EMAIL, TERABOX_PASSWORD and a strong API_KEY as Render environment variables.
+Keep AUTO_LOGIN=1, STARTUP_SMOKE=1 and HEADLESS=1.
