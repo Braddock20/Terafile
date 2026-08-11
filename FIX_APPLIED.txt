@@ -1,11 +1,9 @@
-Render startup failure fixed.
+V1.0.4 fixes
 
-Cause:
-Playwright npm package was 1.62.1 while the Docker image was v1.55.0-noble.
-The browser binary version must match the Playwright package version.
-
-Fix:
-- package.json: playwright 1.62.1
-- Dockerfile: mcr.microsoft.com/playwright:v1.62.1-noble
-
-This matches the exact version requested by the Render error.
+- Current TeraBox login endpoint configured: https://www.terabox.com/login/loginsetting
+- Hardened authentication detection.
+- Explicit security-verification/CAPTCHA failure reporting; no protection bypass.
+- Startup readiness now depends on smoke-test success.
+- Added regression tests for build consistency, login endpoint, readiness semantics and environment credentials.
+- Credentials are never stored in source or the distributable archive.
+- Playwright package remains pinned to 1.62.1 and Docker image remains v1.62.1-noble.
