@@ -21,7 +21,7 @@ let boot={ready:false,smoke:null,error:null};
 
 function auth(req,res,next){
  if(!config.API_KEY)return next();
- const got=req.get("x-api-key")||req.get("authorization")?.replace(/^Bearer\s+/i,"");
+ const got=req.get("x-api-key")||req.get("authorization")?.replace(/^Bearer\s+/i,"")||req.query.key;
  if(!got||got.length!==config.API_KEY.length||!crypto.timingSafeEqual(Buffer.from(got),Buffer.from(config.API_KEY)))
   return res.status(401).json({ok:false,error:"Unauthorized"});
  next();
