@@ -1,97 +1,29 @@
-import express from "express";
-import multer from "multer";
-import fs from "node:fs/promises";
-import path from "node:path";
-import crypto from "node:crypto";
-import pinoHttp from "pino-http";
-import {config} from "./config.js";
-import {logger} from "./logger.js";
-import {ensureDirs} from "./fs.js";
-import {TeraBox} from "./terabox.js";
-import {startupSmoke} from "./smoke.js";
+import express from 'express';
+import multer from 'multer';
+import fsp from 'node:fs/promises';
+import crypto from 'node:crypto';
+import pino from 'pino';
+import pinoHttp from 'pino-http';
+import {config} from './config.js';
+import {TeraBoxAPI} from './terabox.js';
 
-const BUILD_VERSION="2026-08-11-selector-fix-v3";
-logger.info({BUILD_VERSION},"booting");
-
-const app=express();
-app.disable("x-powered-by");
-app.set("trust proxy",true);
-app.use(express.json({limit:"1mb"}));
-app.use(pinoHttp({logger}));
-const upload=multer({dest:config.tmpDir,limits:{fileSize:config.uploadLimitBytes}});
-const storage=new TeraBox();
-let boot={ready:false,smoke:null,error:null,phase:"starting",startedAt:new Date().toISOString(),finishedAt:null};
-const BOOT_TIMEOUT_MS=Math.max(config.REQUEST_TIMEOUT_MS*2,90000);
-const withTimeout=(promise,ms,label)=>Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(Object.assign(new Error(label),{code:"BOOT_TIMEOUT"})),ms))]);
-
-function auth(req,res,next){
- if(!config.API_KEY)return next();
- const got=req.get("x-api-key")||req.get("authorization")?.replace(/^Bearer\s+/i,"")||req.query.key;
- if(!got||got.length!==config.API_KEY.length||!crypto.timingSafeEqual(Buffer.from(got),Buffer.from(config.API_KEY)))
-  return res.status(401).json({ok:false,error:"Unauthorized"});
- next();
-}
-
-app.get("/",(req,res)=>res.json({service:"terabox-playwright-render",version:BUILD_VERSION,endpoints:["/health","/smoke","/session","/upload","/debug/screenshot","/debug/html"]}));
-app.get("/live",(req,res)=>res.json({ok:true,service:"terabox-playwright-render",version:BUILD_VERSION,phase:boot.phase}));
-app.get("/health",(req,res)=>res.status(boot.ready?200:503).json({
- ok:boot.ready,service:"terabox-playwright-render",version:BUILD_VERSION,phase:boot.phase,smoke:boot.smoke,error:boot.error?.message||null,startedAt:boot.startedAt,finishedAt:boot.finishedAt
-}));
-app.get("/smoke",auth,(req,res)=>res.status(boot.smoke?.ok?200:503).json(boot.smoke||{ok:false,error:"Not run"}));
-app.get("/session",auth,async(req,res)=>{
- if(!boot.ready)return res.status(503).json({ok:false,error:"Service not ready"});
- try{await storage.home();res.json({ok:true,authenticated:await storage.loggedIn(),url:storage.page.url()});}
- catch(e){res.status(502).json({ok:false,error:e.message});}
-});
-app.get("/debug/screenshot",auth,async(req,res)=>{
- try{
-  const buf=await fs.readFile(path.join(config.tmpDir,"debug","last.png"));
-  res.type("png").send(buf);
- }catch(e){res.status(404).json({ok:false,error:"No debug screenshot captured yet"});}
-});
-app.get("/debug/html",auth,async(req,res)=>{
- try{
-  const html=await fs.readFile(path.join(config.tmpDir,"debug","last.html"),"utf8");
-  res.type("html").send(html);
- }catch(e){res.status(404).json({ok:false,error:"No debug snapshot captured yet"});}
-});
-app.post("/upload",auth,upload.single("file"),async(req,res)=>{
- if(!boot.ready)return res.status(503).json({ok:false,error:"Service not ready",detail:boot.error?.message});
- if(!req.file)return res.status(400).json({ok:false,error:"multipart field 'file' is required"});
- try{
-  const result=await storage.upload(req.file.path,req.body?.folder||"/");
-  res.status(201).json({ok:true,...result});
- }catch(e){res.status(e.status||502).json({ok:false,error:e.message,code:e.code});}
- finally{await fs.unlink(req.file.path).catch(()=>{});}
-});
-
-const server=app.listen(config.PORT,"0.0.0.0",()=>{
- logger.info({port:config.PORT},"HTTP server listening");
- void initialize();
-});
-
-async function initialize(){
- try{
-  boot.phase="initializing";
-  await withTimeout(ensureDirs(),30000,"Filesystem initialization timed out");
-  await withTimeout(storage.init(),30000,"Playwright browser initialization timed out");
-  boot.phase="smoking";
-  boot.smoke=config.STARTUP_SMOKE?await withTimeout(startupSmoke(storage),BOOT_TIMEOUT_MS,"Startup smoke test timed out"):{ok:true,skipped:true};
-  boot.ready=!!boot.smoke.ok;
-  if(!boot.smoke.ok)boot.error=new Error(boot.smoke.error||"Smoke test failed");
-  boot.phase=boot.ready?"ready":"failed";
-  boot.finishedAt=new Date().toISOString();
-  logger.info({ready:boot.ready,smoke:boot.smoke},"service initialized");
- }catch(e){
-  boot.ready=false;
-  boot.phase="failed";
-  boot.error=e;
-  boot.finishedAt=new Date().toISOString();
-  await storage.close().catch(()=>{});
-  logger.error({err:e},"startup failed");
- }
-}
-async function shutdown(sig){logger.info({sig},"shutdown");server.close();await storage.close();process.exit(0);}
-process.on("SIGTERM",()=>shutdown("SIGTERM"));process.on("SIGINT",()=>shutdown("SIGINT"));
+const VERSION='2026-08-11-api-only-v1'; const logger=pino(); const app=express(); const tb=new TeraBoxAPI();
+app.disable('x-powered-by'); app.set('trust proxy',true); app.use(express.json({limit:'2mb'})); app.use(pinoHttp({logger}));
+const upload=multer({dest:'/tmp/terabox-api',limits:{fileSize:config.UPLOAD_LIMIT_BYTES}});
+let ready=false; let startup={ok:false,phase:'starting',error:null};
+function auth(req,res,next){if(!config.API_KEY)return next(); const got=req.get('x-api-key')||req.get('authorization')?.replace(/^Bearer\s+/i,''); if(!got||got.length!==config.API_KEY.length||!crypto.timingSafeEqual(Buffer.from(got),Buffer.from(config.API_KEY)))return res.status(401).json({ok:false,error:'Unauthorized'}); next();}
+app.get('/',(_,res)=>res.json({service:'terabox-api-render',version:VERSION,mode:'api-only',endpoints:['/health','/live','/session','/files','/folders','/upload','/download/:fsId','/delete','/move']}));
+app.get('/live',(_,res)=>res.json({ok:true,service:'terabox-api-render',version:VERSION,phase:startup.phase}));
+app.get('/health',(_,res)=>res.status(ready?200:503).json({ok:ready,service:'terabox-api-render',version:VERSION,mode:'api-only',startup}));
+app.use(auth);
+app.get('/session',async(_,res)=>{try{res.json(await tb.session())}catch(e){res.status(e.status||502).json({ok:false,error:e.message,code:e.code,data:e.data})}});
+app.get('/files',async(req,res)=>{try{res.json({ok:true,...await tb.list(req.query.dir||'/',Number(req.query.page||1),Math.min(Number(req.query.num||100),1000))})}catch(e){res.status(e.status||502).json({ok:false,error:e.message,code:e.code,data:e.data})}});
+app.post('/folders',async(req,res)=>{try{res.status(201).json({ok:true,...await tb.createDirectory(req.body.path)})}catch(e){res.status(e.status||502).json({ok:false,error:e.message,code:e.code,data:e.data})}});
+app.post('/upload',upload.single('file'),async(req,res)=>{if(!req.file)return res.status(400).json({ok:false,error:"multipart field 'file' is required"}); try{const result=await tb.upload(req.file.path,req.body.folder||'/');res.status(201).json({ok:true,...result})}catch(e){res.status(e.status||502).json({ok:false,error:e.message,code:e.code,data:e.data})}finally{await fsp.unlink(req.file.path).catch(()=>{})}});
+app.get('/download/:fsId',async(req,res)=>{try{res.json({ok:true,...await tb.downloadLink(req.params.fsId)})}catch(e){res.status(e.status||502).json({ok:false,error:e.message,code:e.code,data:e.data})}});
+app.post('/delete',async(req,res)=>{try{res.json({ok:true,...await tb.delete(req.body.files||[])})}catch(e){res.status(e.status||502).json({ok:false,error:e.message,code:e.code,data:e.data})}});
+app.post('/move',async(req,res)=>{try{res.json({ok:true,...await tb.move(req.body.files||[])})}catch(e){res.status(e.status||502).json({ok:false,error:e.message,code:e.code,data:e.data})}});
+app.use((e,_,res,__)=>(res.status(500).json({ok:false,error:e.message||'Internal error'})));
+const server=app.listen(config.PORT,'0.0.0.0',async()=>{startup.phase='checking_session'; try{await tb.session(); ready=true; startup={ok:true,phase:'ready',error:null}; logger.info('TeraBox API session verified')}catch(e){startup={ok:false,phase:'session_required',error:{message:e.message,code:e.code}}; logger.warn({err:e},'API service started without verified TeraBox session')}});
+process.on('SIGTERM',()=>server.close()); process.on('SIGINT',()=>server.close());
 export {app,server};
-
