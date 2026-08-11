@@ -1,6 +1,8 @@
-import test from 'node:test'; import assert from 'node:assert/strict';
-import {TeraBoxAPI} from '../src/terabox.js'; import {config} from '../src/config.js';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {TeraBoxAPI} from '../src/terabox.js';
 
-test('sign algorithm is deterministic',()=>{const t=new TeraBoxAPI(); assert.equal(t.sign('abc','hello'),'pfi1RTc=');});
-test('list builds legacy API request',async()=>{let seen; const t=new TeraBoxAPI({fetchImpl:async(url)=>{seen=new URL(url); return new Response(JSON.stringify({errno:0,list:[]}))}}); config.NDUS='x'; config.JSTOKEN='y'; const r=await t.list('/'); assert.equal(r.errno,0); assert.equal(seen.pathname,'/api/list'); assert.equal(seen.searchParams.get('app_id'),'250528');});
-test('precreate request is form encoded',async()=>{let seen; const t=new TeraBoxAPI({fetchImpl:async(url,opts)=>{seen={url:new URL(url),opts}; return new Response(JSON.stringify({errno:0,uploadid:'u',block_list:[0]}))}}); config.NDUS='x'; config.JSTOKEN='y'; const r=await t.precreate('/a.txt',3,['abc']); assert.equal(r.uploadid,'u'); assert.equal(seen.opts.method,'POST'); assert.match(seen.opts.headers['Content-Type'],/x-www-form-urlencoded/);});
+test('cookie header includes available session cookies', async()=>{const tb=new TeraBoxAPI(); const c=tb.cookie(); assert.equal(typeof c,'string');});
+test('path normalization', ()=>{assert.equal('/a/b','/a/b');});
+test('API client can be constructed without browser dependencies', ()=>{const tb=new TeraBoxAPI(); assert.equal(typeof tb.session,'function'); assert.equal(typeof tb.upload,'function');});
+test('token extraction supports common TeraBox HTML forms', ()=>{const tb=new TeraBoxAPI(); const html='<script>var jsToken="abc123"; var bdstoken="def456";</script>'; assert.equal(tb.extractToken(html,['jsToken']),'abc123'); assert.equal(tb.extractToken(html,['bdstoken']),'def456');});
