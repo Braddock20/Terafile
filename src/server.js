@@ -20,7 +20,9 @@ app.use(express.json({limit:"1mb"}));
 app.use(pinoHttp({logger}));
 const upload=multer({dest:config.tmpDir,limits:{fileSize:config.uploadLimitBytes}});
 const storage=new TeraBox();
-let boot={ready:false,smoke:null,error:null};
+let boot={ready:false,smoke:null,error:null,phase:"starting",startedAt:new Date().toISOString(),finishedAt:null};
+const BOOT_TIMEOUT_MS=Math.max(config.REQUEST_TIMEOUT_MS*2,90000);
+const withTimeout=(promise,ms,label)=>Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(Object.assign(new Error(label),{code:"BOOT_TIMEOUT"})),ms))]);
 
 function auth(req,res,next){
  if(!config.API_KEY)return next();
@@ -31,8 +33,9 @@ function auth(req,res,next){
 }
 
 app.get("/",(req,res)=>res.json({service:"terabox-playwright-render",version:BUILD_VERSION,endpoints:["/health","/smoke","/session","/upload","/debug/screenshot","/debug/html"]}));
+app.get("/live",(req,res)=>res.json({ok:true,service:"terabox-playwright-render",version:BUILD_VERSION,phase:boot.phase}));
 app.get("/health",(req,res)=>res.status(boot.ready?200:503).json({
- ok:boot.ready,service:"terabox-playwright-render",version:BUILD_VERSION,smoke:boot.smoke,error:boot.error?.message
+ ok:boot.ready,service:"terabox-playwright-render",version:BUILD_VERSION,phase:boot.phase,smoke:boot.smoke,error:boot.error?.message||null,startedAt:boot.startedAt,finishedAt:boot.finishedAt
 }));
 app.get("/smoke",auth,(req,res)=>res.status(boot.smoke?.ok?200:503).json(boot.smoke||{ok:false,error:"Not run"}));
 app.get("/session",auth,async(req,res)=>{
@@ -62,16 +65,32 @@ app.post("/upload",auth,upload.single("file"),async(req,res)=>{
  finally{await fs.unlink(req.file.path).catch(()=>{});}
 });
 
-const server=app.listen(config.PORT,"0.0.0.0",async()=>{
+const server=app.listen(config.PORT,"0.0.0.0",()=>{
+ logger.info({port:config.PORT},"HTTP server listening");
+ void initialize();
+});
+
+async function initialize(){
  try{
-  await ensureDirs();
-  await storage.init();
-  boot.smoke=config.STARTUP_SMOKE?await startupSmoke(storage):{ok:true,skipped:true};
+  boot.phase="initializing";
+  await withTimeout(ensureDirs(),30000,"Filesystem initialization timed out");
+  await withTimeout(storage.init(),30000,"Playwright browser initialization timed out");
+  boot.phase="smoking";
+  boot.smoke=config.STARTUP_SMOKE?await withTimeout(startupSmoke(storage),BOOT_TIMEOUT_MS,"Startup smoke test timed out"):{ok:true,skipped:true};
   boot.ready=!!boot.smoke.ok;
   if(!boot.smoke.ok)boot.error=new Error(boot.smoke.error||"Smoke test failed");
+  boot.phase=boot.ready?"ready":"failed";
+  boot.finishedAt=new Date().toISOString();
   logger.info({ready:boot.ready,smoke:boot.smoke},"service initialized");
- }catch(e){boot.error=e;logger.error({err:e},"startup failed");}
-});
+ }catch(e){
+  boot.ready=false;
+  boot.phase="failed";
+  boot.error=e;
+  boot.finishedAt=new Date().toISOString();
+  await storage.close().catch(()=>{});
+  logger.error({err:e},"startup failed");
+ }
+}
 async function shutdown(sig){logger.info({sig},"shutdown");server.close();await storage.close();process.exit(0);}
 process.on("SIGTERM",()=>shutdown("SIGTERM"));process.on("SIGINT",()=>shutdown("SIGINT"));
 export {app,server};
