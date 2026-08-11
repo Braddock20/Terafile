@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
 
 const pkg=JSON.parse(fs.readFileSync("package.json","utf8"));
 const docker=fs.readFileSync("Dockerfile","utf8");
@@ -28,4 +29,22 @@ test("credentials are supplied through environment variables",()=>{
   assert.match(config,/TERABOX_PASSWORD/);
   assert.match(env,/TERABOX_EMAIL=/);
   assert.match(env,/TERABOX_PASSWORD=/);
+});
+
+
+test("Render uses liveness endpoint so long credentialed smoke tests do not fail deployment",()=>{
+  const render=fs.readFileSync(path.join(".","render.yaml"),"utf8");
+  assert.match(render,/healthCheckPath:\s*\/live/);
+});
+
+test("health exposes initialization phase and explicit null error",()=>{
+  const server=fs.readFileSync(path.join(".","src/server.js"),"utf8");
+  assert.match(server,/phase:boot\.phase/);
+  assert.match(server,/error:boot\.error\?\.message\|\|null/);
+});
+
+test("startup initialization has a hard timeout",()=>{
+  const server=fs.readFileSync(path.join(".","src/server.js"),"utf8");
+  assert.match(server,/BOOT_TIMEOUT_MS/);
+  assert.match(server,/Startup smoke test timed out/);
 });
