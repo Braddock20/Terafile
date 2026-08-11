@@ -59,6 +59,7 @@ Do not commit credentials.
 ```http
 GET /
 GET /health
+GET /live
 ```
 
 ### Protected
