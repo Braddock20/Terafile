@@ -67,7 +67,7 @@ const server=app.listen(config.PORT,"0.0.0.0",async()=>{
   await ensureDirs();
   await storage.init();
   boot.smoke=config.STARTUP_SMOKE?await startupSmoke(storage):{ok:true,skipped:true};
-  boot.ready=true;
+  boot.ready=!!boot.smoke.ok;
   if(!boot.smoke.ok)boot.error=new Error(boot.smoke.error||"Smoke test failed");
   logger.info({ready:boot.ready,smoke:boot.smoke},"service initialized");
  }catch(e){boot.error=e;logger.error({err:e},"startup failed");}
