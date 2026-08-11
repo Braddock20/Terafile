@@ -10,7 +10,7 @@ import {ensureDirs} from "./fs.js";
 import {TeraBox} from "./terabox.js";
 import {startupSmoke} from "./smoke.js";
 
-const BUILD_VERSION="2026-08-11-ensureauth-v2";
+const BUILD_VERSION="2026-08-11-selector-fix-v3";
 logger.info({BUILD_VERSION},"booting");
 
 const app=express();
