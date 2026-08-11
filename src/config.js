@@ -16,5 +16,5 @@ export const config={
  CHUNK_SIZE:int(process.env.CHUNK_SIZE,16*1024*1024)
 };
 export function requireSession(){
- if(!config.NDUS||!config.JSTOKEN) throw Object.assign(new Error('TERABOX_NDUS and TERABOX_JSTOKEN are required. API-only mode uses an authenticated TeraBox web session; it does not automate login.'),{code:'SESSION_CONFIG_MISSING',status:503});
+ if(!config.NDUS) throw Object.assign(new Error('TERABOX_NDUS is required. API-only mode uses an authenticated TeraBox web session; it does not automate login.'),{code:'SESSION_CONFIG_MISSING',status:503});
 }
