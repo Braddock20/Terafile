@@ -3,7 +3,7 @@ services:
     name: terabox-playwright-render
     runtime: docker
     plan: free
-    healthCheckPath: /health
+    healthCheckPath: /live
     autoDeploy: true
     envVars:
       - key: PORT
