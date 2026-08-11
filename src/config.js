@@ -1,31 +1,20 @@
-import path from "node:path";
-import {z} from "zod";
-const b=z.enum(["0","1"]).default("1").transform(v=>v==="1");
-const env=z.object({
- PORT:z.coerce.number().int().min(1).max(65535).default(10000),
- TERABOX_BASE_URL:z.string().url().default("https://www.terabox.com/"),
- TERABOX_LOGIN_URL:z.string().url().default("https://www.terabox.com/login/loginsetting"),
- TERABOX_EMAIL:z.string().email().optional(),
- TERABOX_PASSWORD:z.string().min(1).optional(),
- TERABOX_PROFILE_DIR:z.string().default("/var/data/terabox-profile"),
- TERABOX_STATE_FILE:z.string().default("/var/data/terabox-state.json"),
- TERABOX_TMP_DIR:z.string().default("/var/data/tmp"),
- TERABOX_DOWNLOAD_DIR:z.string().default("/var/data/downloads"),
- API_KEY:z.string().min(16).optional(),
- MAX_UPLOAD_MB:z.coerce.number().int().min(1).max(10240).default(512),
- REQUEST_TIMEOUT_MS:z.coerce.number().int().min(5000).max(120000).default(45000),
- STARTUP_SMOKE:z.enum(["0","1"]).default("1").transform(v=>v==="1"),
- AUTO_LOGIN:z.enum(["0","1"]).default("1").transform(v=>v==="1"),
- HEADLESS:b,
- LOG_LEVEL:z.string().default("info")
-}).parse(process.env);
-export const config={
- ...env,
- baseUrl:env.TERABOX_BASE_URL.replace(/\/+$/,"")+"/",
- profileDir:path.resolve(env.TERABOX_PROFILE_DIR),
- stateFile:path.resolve(env.TERABOX_STATE_FILE),
- tmpDir:path.resolve(env.TERABOX_TMP_DIR),
- downloadDir:path.resolve(env.TERABOX_DOWNLOAD_DIR),
- uploadLimitBytes:env.MAX_UPLOAD_MB*1024*1024
-};
+import path from 'node:path';
 
+const int=(v,d)=>Number.isFinite(Number(v))?Number(v):d;
+export const config={
+ PORT:int(process.env.PORT,10000),
+ API_KEY:process.env.API_KEY||'',
+ NDUS:process.env.TERABOX_NDUS||'',
+ JSTOKEN:process.env.TERABOX_JSTOKEN||'',
+ APP_ID:process.env.TERABOX_APP_ID||'250528',
+ BDSTOKEN:process.env.TERABOX_BDSTOKEN||'',
+ BROWSER_ID:process.env.TERABOX_BROWSER_ID||'',
+ BASE_URL:process.env.TERABOX_BASE_URL||'https://www.1024terabox.com',
+ UPLOAD_URL:process.env.TERABOX_UPLOAD_URL||'https://c-jp.1024terabox.com',
+ REQUEST_TIMEOUT_MS:int(process.env.REQUEST_TIMEOUT_MS,60000),
+ UPLOAD_LIMIT_BYTES:int(process.env.UPLOAD_LIMIT_BYTES,10*1024*1024*1024),
+ CHUNK_SIZE:int(process.env.CHUNK_SIZE,16*1024*1024)
+};
+export function requireSession(){
+ if(!config.NDUS||!config.JSTOKEN) throw Object.assign(new Error('TERABOX_NDUS and TERABOX_JSTOKEN are required. API-only mode uses an authenticated TeraBox web session; it does not automate login.'),{code:'SESSION_CONFIG_MISSING',status:503});
+}
