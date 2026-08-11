@@ -1,9 +1,11 @@
-Fixed Render startup failure:
-- `playwright` was incorrectly only available as a dev dependency / not installed in the production image.
-- `src/terabox.js` imports `playwright`, so it must be a production dependency.
-- Moved Playwright to `dependencies`.
-- Docker production install now installs it.
-- The base image already contains the compatible Chromium runtime.
+Render startup failure fixed.
 
-Previous error:
-ERR_MODULE_NOT_FOUND: Cannot find package 'playwright'
+Cause:
+Playwright npm package was 1.62.1 while the Docker image was v1.55.0-noble.
+The browser binary version must match the Playwright package version.
+
+Fix:
+- package.json: playwright 1.62.1
+- Dockerfile: mcr.microsoft.com/playwright:v1.62.1-noble
+
+This matches the exact version requested by the Render error.
