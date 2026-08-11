@@ -4,7 +4,9 @@ import path from "node:path";
 import {config} from "./config.js";
 import {logger} from "./logger.js";
 
-const loginUrl=/\/login(?:\/|$)|loginsetting|outlogin/i;
+const loginUrl=/\/login(?:\/|$)|loginsetting|outlogin|outside\/login/i;
+const loginText=/\b(log\s*in|login|sign\s*in)\b/i;
+const verificationText=/(security verification|safe verification|verify that you are human|captcha|slider verification|risk verification)/i;
 
 const cleanName=n=>path.basename(String(n)).replace(/[^\w.\- ()[\]]+/g,"_").slice(0,180)||"upload.bin";
 
@@ -33,10 +35,10 @@ export class TeraBox{
   try{
    const dir=path.join(config.tmpDir,"debug");
    await fs.mkdir(dir,{recursive:true});
-   await this.page.screenshot({path:path.join(dir,"last.png"),fullPage:true}).catch(()=>{});
-   const html=await this.page.content().catch(()=>"");
+   await this.page?.screenshot({path:path.join(dir,"last.png"),fullPage:true}).catch(()=>{});
+   const html=await this.page?.content().catch(()=>'')||"";
    await fs.writeFile(path.join(dir,"last.html"),html).catch(()=>{});
-   logger.warn({label,url:this.page.url(),title:await this.page.title().catch(()=>null)},"debug snapshot captured");
+   logger.warn({label,url:this.page?.url(),title:await this.page?.title().catch(()=>null)} ,"debug snapshot captured");
   }catch(e){logger.warn({err:e},"debug capture failed");}
  }
  async home(){
@@ -44,58 +46,87 @@ export class TeraBox{
   await this.page.waitForLoadState("networkidle",{timeout:12000}).catch(()=>{});
   return {url:this.page.url(),title:await this.page.title()};
  }
+ async pageLooksLikeLogin(){
+  if(!this.page)return true;
+  if(loginUrl.test(this.page.url()))return true;
+  const password=await this.page.locator('input[type="password"]').first().isVisible().catch(()=>false);
+  if(password)return true;
+  const loginControls=await this.page.getByText(loginText,{exact:false}).first().isVisible().catch(()=>false);
+  return loginControls && !await this.hasAuthenticatedUi();
+ }
+ async hasAuthenticatedUi(){
+  const candidates=[
+   'input[type="file"]',
+   'button:has-text("Upload")',
+   '[role="button"]:has-text("Upload")',
+   'text=My Files',
+   'text=All Files',
+   'text=Recent'
+  ];
+  for(const selector of candidates){
+   if(await this.page.locator(selector).first().isVisible().catch(()=>false))return true;
+  }
+  return false;
+ }
  async loggedIn(){
   if(!this.page)return false;
-  if(loginUrl.test(this.page.url()))return false;
-  const password=await this.page.locator('input[type="password"]').first().isVisible().catch(()=>false);
-  if(password)return false;
-  const loginButton=await this.page.locator('a:has-text("Login"),button:has-text("Login")').first().isVisible().catch(()=>false);
-  if(loginButton)return false;
-  return true;
+  if(await this.pageLooksLikeLogin())return false;
+  return await this.hasAuthenticatedUi();
  }
  async loginWithCredentials(){
   if(!config.TERABOX_EMAIL||!config.TERABOX_PASSWORD)
-   throw new Error("TERABOX_EMAIL and TERABOX_PASSWORD are required for automatic Render login");
+   throw Object.assign(new Error("TERABOX_EMAIL and TERABOX_PASSWORD are required for automatic Render login"),{code:"CONFIG_MISSING"});
+
   await this.page.goto(config.TERABOX_LOGIN_URL,{waitUntil:"domcontentloaded",timeout:config.REQUEST_TIMEOUT_MS});
-  const email=this.page.locator('input[type="email"],input[placeholder*="email" i]').first();
-  const password=this.page.locator('input[type="password"],input[placeholder*="password" i]').first();
+  await this.page.waitForLoadState("networkidle",{timeout:12000}).catch(()=>{});
+
+  // Current TeraBox web login exposes an email/password form on /login/loginsetting.
+  // Keep selectors broad because the site localizes labels across regions.
+  const email=this.page.locator('input[type="email"],input[placeholder*="email" i],input[placeholder*="邮箱" i]').first();
+  const password=this.page.locator('input[type="password"],input[placeholder*="password" i],input[placeholder*="密码" i]').first();
   try{
    await email.waitFor({state:"visible",timeout:15000});
+   await password.waitFor({state:"visible",timeout:10000});
   }catch(e){
    await this.captureDebug("login_form_not_found");
-   throw e;
+   throw Object.assign(new Error("TeraBox email/password form was not found. The site may have changed the login flow."),{code:"LOGIN_FORM_NOT_FOUND",cause:e.message});
   }
+
   await email.fill(config.TERABOX_EMAIL);
   await password.fill(config.TERABOX_PASSWORD);
-  const submit=this.page.locator('button:has-text("Login")')
-   .or(this.page.locator('button:has-text("Log in")'))
-   .or(this.page.locator('button[type="submit"]'))
-   .or(this.page.getByText("Login",{exact:false}))
-   .first();
-  await submit.click();
-  await this.page.waitForLoadState("networkidle",{timeout:20000}).catch(()=>{});
-  await this.page.waitForTimeout(2500);
+
+  const submit=this.page.locator('button[type="submit"],button:has-text("Login"),button:has-text("Log in"),button:has-text("Sign in"),button:has-text("登录"),button:has-text("Masuk")').first();
+  if(!(await submit.isVisible().catch(()=>false))){
+   await this.captureDebug("login_submit_not_found");
+   throw Object.assign(new Error("TeraBox login submit control was not found."),{code:"LOGIN_SUBMIT_NOT_FOUND"});
+  }
+
+  await Promise.allSettled([
+   this.page.waitForLoadState("domcontentloaded",{timeout:20000}),
+   submit.click()
+  ]);
+  await this.page.waitForTimeout(3000);
+
+  const body=await this.page.locator("body").innerText().catch(()=>"");
+  if(verificationText.test(body)){
+   await this.captureDebug("security_verification_required");
+   throw Object.assign(new Error("TeraBox requires an interactive security verification/CAPTCHA. Automatic login will not bypass it."),{code:"SECURITY_VERIFICATION_REQUIRED"});
+  }
   if(!(await this.loggedIn())){
    await this.captureDebug("login_incomplete");
-   throw Object.assign(new Error("TeraBox did not complete automatic login. It may require security verification/CAPTCHA or a different login method."),{code:"LOGIN_INCOMPLETE"});
+   throw Object.assign(new Error("TeraBox did not complete automatic login. Check the credentials or the current login flow."),{code:"LOGIN_INCOMPLETE"});
   }
   await this.saveState();
   return true;
  }
  async saveState(){
   const state=await this.browser.storageState();
+  await fs.mkdir(path.dirname(config.stateFile),{recursive:true});
   await fs.writeFile(config.stateFile,JSON.stringify(state,null,2),{mode:0o600});
  }
  async ensureAuth(){
-  await this.page.goto(config.TERABOX_LOGIN_URL,{waitUntil:"domcontentloaded",timeout:config.REQUEST_TIMEOUT_MS});
-  await this.page.waitForLoadState("networkidle",{timeout:12000}).catch(()=>{});
-  const email=this.page.locator('input[type="email"],input[placeholder*="email" i]').first();
-  const onLoginForm=await email.isVisible().catch(()=>false);
-  if(!onLoginForm){
-   await this.captureDebug("assumed_authenticated");
-   await this.saveState();
-   return true;
-  }
+  await this.home();
+  if(await this.loggedIn())return true;
   if(config.AUTO_LOGIN){await this.loginWithCredentials();return true;}
   throw Object.assign(new Error("Not authenticated"),{code:"AUTH_REQUIRED",status:401});
  }
@@ -107,19 +138,16 @@ export class TeraBox{
    const input=this.page.locator('input[type="file"]').first();
    if(await input.count()) await input.setInputFiles(localPath);
    else{
-    const button=this.page.locator('button:has-text("Upload")')
-     .or(this.page.locator('[role="button"]:has-text("Upload")'))
-     .or(this.page.getByText("Upload",{exact:false}))
-     .first();
+    const button=this.page.locator('button:has-text("Upload"),[role="button"]:has-text("Upload")').first();
     if(!(await button.isVisible().catch(()=>false))){
      await this.captureDebug("upload_control_missing");
-     throw new Error("TeraBox upload control not found; UI changed");
+     throw Object.assign(new Error("TeraBox upload control not found; UI changed or the account is not authenticated."),{code:"UPLOAD_CONTROL_NOT_FOUND"});
     }
     const chooser=this.page.waitForEvent("filechooser",{timeout:10000});
-    await button.click();await (await chooser).setFiles(localPath);
+    await button.click();
+    await (await chooser).setFiles(localPath);
    }
-   await this.page.getByText(name,{exact:false}).first()
-    .waitFor({state:"visible",timeout:Math.max(60000,config.REQUEST_TIMEOUT_MS)}).catch(()=>{});
+   await this.page.getByText(name,{exact:false}).first().waitFor({state:"visible",timeout:Math.max(60000,config.REQUEST_TIMEOUT_MS)}).catch(()=>{});
    return {name,folder,uploaded:true,url:this.page.url()};
   }finally{release();}
  }
@@ -130,12 +158,11 @@ export class TeraBox{
   const smokeFile=path.join(config.tmpDir,`.terabox-smoke-${Date.now()}.txt`);
   await fs.writeFile(smokeFile,"TeraBox Playwright smoke test");
   try{
+   const authenticated=await this.ensureAuth();
    const upload=await this.upload(smokeFile,"/");
-   return {ok:publicPage&&!!upload,publicPage,authenticated:true,upload,durationMs:Date.now()-started};
+   return {ok:publicPage&&authenticated&&!!upload.uploaded,publicPage,authenticated,upload,durationMs:Date.now()-started};
   }catch(e){
-   const authenticated=!["AUTH_REQUIRED","LOGIN_INCOMPLETE"].includes(e.code);
-   return {ok:false,publicPage,authenticated,error:e.message,code:e.code,durationMs:Date.now()-started};
+   return {ok:false,publicPage,authenticated:false,error:e.message,code:e.code,durationMs:Date.now()-started};
   }finally{await fs.unlink(smokeFile).catch(()=>{});}
  }
 }
-
