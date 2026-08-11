@@ -52,6 +52,8 @@ export class TeraBox{
   if(loginUrl.test(this.page.url()))return false;
   const password=await this.page.locator('input[type="password"]').first().isVisible().catch(()=>false);
   if(password)return false;
+  const loginButton=await this.page.locator('a:has-text("Login"),button:has-text("Login")').first().isVisible().catch(()=>false);
+  if(loginButton)return false;
   return true;
  }
  async loginWithCredentials(){
