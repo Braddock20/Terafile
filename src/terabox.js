@@ -32,6 +32,16 @@ export class TeraBox{
   this.state="browser_ready";
  }
  async close(){await this.browser?.close().catch(()=>{});this.browser=null;this.page=null;this.state="closed";}
+ async captureDebug(label="failure"){
+  try{
+   const dir=path.join(config.tmpDir,"debug");
+   await fs.mkdir(dir,{recursive:true});
+   await this.page.screenshot({path:path.join(dir,"last.png"),fullPage:true}).catch(()=>{});
+   const html=await this.page.content().catch(()=>"");
+   await fs.writeFile(path.join(dir,"last.html"),html).catch(()=>{});
+   logger.warn({label,url:this.page.url(),title:await this.page.title().catch(()=>null)},"debug snapshot captured");
+  }catch(e){logger.warn({err:e},"debug capture failed");}
+ }
  async home(){
   await this.page.goto(config.baseUrl,{waitUntil:"domcontentloaded",timeout:config.REQUEST_TIMEOUT_MS});
   await this.page.waitForLoadState("networkidle",{timeout:12000}).catch(()=>{});
@@ -82,7 +92,10 @@ export class TeraBox{
    if(await input.count()) await input.setInputFiles(localPath);
    else{
     const button=this.page.locator(uploadSelectors.slice(1).join(",")).first();
-    if(!(await button.isVisible().catch(()=>false)))throw new Error("TeraBox upload control not found; UI changed");
+    if(!(await button.isVisible().catch(()=>false))){
+     await this.captureDebug("upload_control_missing");
+     throw new Error("TeraBox upload control not found; UI changed");
+    }
     const chooser=this.page.waitForEvent("filechooser",{timeout:10000});
     await button.click();await (await chooser).setFiles(localPath);
    }
