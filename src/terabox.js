@@ -5,12 +5,6 @@ import {config} from "./config.js";
 import {logger} from "./logger.js";
 
 const loginUrl=/\/login(?:\/|$)|loginsetting|outlogin/i;
-const uploadSelectors=[
- 'input[type="file"]',
- 'button:has-text("Upload")',
- '[role="button"]:has-text("Upload")',
- 'text=Upload'
-];
 
 const cleanName=n=>path.basename(String(n)).replace(/[^\w.\- ()[\]]+/g,"_").slice(0,180)||"upload.bin";
 
@@ -73,7 +67,11 @@ export class TeraBox{
   }
   await email.fill(config.TERABOX_EMAIL);
   await password.fill(config.TERABOX_PASSWORD);
-  const submit=this.page.locator('button:has-text("Login"),button:has-text("Log in"),button[type="submit"],text=Login').first();
+  const submit=this.page.locator('button:has-text("Login")')
+   .or(this.page.locator('button:has-text("Log in")'))
+   .or(this.page.locator('button[type="submit"]'))
+   .or(this.page.getByText("Login",{exact:false}))
+   .first();
   await submit.click();
   await this.page.waitForLoadState("networkidle",{timeout:20000}).catch(()=>{});
   await this.page.waitForTimeout(2500);
@@ -109,7 +107,10 @@ export class TeraBox{
    const input=this.page.locator('input[type="file"]').first();
    if(await input.count()) await input.setInputFiles(localPath);
    else{
-    const button=this.page.locator(uploadSelectors.slice(1).join(",")).first();
+    const button=this.page.locator('button:has-text("Upload")')
+     .or(this.page.locator('[role="button"]:has-text("Upload")'))
+     .or(this.page.getByText("Upload",{exact:false}))
+     .first();
     if(!(await button.isVisible().catch(()=>false))){
      await this.captureDebug("upload_control_missing");
      throw new Error("TeraBox upload control not found; UI changed");
